@@ -1,0 +1,40 @@
+[package]
+name = "avian_motors"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = { version = "*", features = [
+  "max_level_debug",
+  "release_max_level_warn",
+] }
+bevy = { version = "0.14", features = ["dynamic_linking", "wayland"] }
+avian3d = { version = "0.1", default-features = false, features = [
+  "3d",
+  "f64",
+  "default-collider",
+  "parry-f64",
+  "collider-from-mesh",
+  "parallel",
+  "simd",
+] }
+bevy_egui = "0.30"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"
