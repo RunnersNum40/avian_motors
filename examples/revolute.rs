@@ -1,12 +1,9 @@
 use avian3d::prelude::*;
-use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
-
-mod motor;
-
-use motor::{
+use avian_motors::motor::{
     get_relative_velocity, MotorBundle, MotorDamping, MotorPlugin, MotorStiffness, TargetVelocity,
 };
+use bevy::prelude::*;
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 fn main() {
     App::new()
@@ -16,7 +13,6 @@ fn main() {
             EguiPlugin,
             MotorPlugin::default(),
         ))
-        .insert_resource(SubstepCount(500))
         .add_systems(Startup, setup)
         .add_systems(Update, ui_controls)
         .run();
@@ -132,11 +128,11 @@ fn ui_controls(
             ui.label("Motor Parameters:");
             ui.horizontal(|ui| {
                 ui.label("Stiffness:");
-                ui.add(egui::Slider::new(&mut stiffness.0, 0.0..=0.0002));
+                ui.add(egui::Slider::new(&mut stiffness.0, 0.0..=0.00002));
             });
             ui.horizontal(|ui| {
                 ui.label("Damping:");
-                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.00001));
+                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.000003));
             });
 
             if let Some((relative_velocity, _, _)) = get_relative_velocity(joint, &mut body_query) {

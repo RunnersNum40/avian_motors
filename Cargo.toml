@@ -3,6 +3,14 @@ name = "avian_motors"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "avian_motors"
+path = "src/lib.rs"
+
+[[example]]
+name = "revolute"
+path = "examples/revolute.rs"
+
 [dependencies]
 log = { version = "*", features = [
   "max_level_debug",
@@ -19,10 +27,6 @@ avian3d = { version = "0.1", default-features = false, features = [
   "simd",
 ] }
 bevy_egui = "0.30"
-
-[target.x86_64-unknown-linux-gnu]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 
 [profile.dev]
 opt-level = 1
