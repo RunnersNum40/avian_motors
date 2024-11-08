@@ -1,6 +1,7 @@
 use avian3d::prelude::*;
 use avian_motors::motor::{
-    get_relative_velocity, MotorBundle, MotorDamping, MotorPlugin, MotorStiffness, TargetVelocity,
+    get_entity_pair, get_relative_angular_velocity, MotorBundle, MotorDamping, MotorIntegralGain,
+    MotorPlugin, MotorRotation, MotorStiffness, TargetVelocity,
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -114,14 +115,19 @@ fn ui_controls(
         &mut TargetVelocity,
         &mut MotorStiffness,
         &mut MotorDamping,
+        &mut MotorIntegralGain,
+        &MotorRotation,
     )>,
-    mut body_query: Query<(&AngularVelocity, &mut ExternalTorque), With<RigidBody>>,
+    body_query: Query<&RigidBody>,
+    velocity_query: Query<&AngularVelocity, With<RigidBody>>,
 ) {
     egui::Window::new("Motor Control").show(contexts.ctx_mut(), |ui| {
-        for (joint, mut target_velocity, mut stiffness, mut damping) in query.iter_mut() {
+        for (joint, mut target_velocity, mut stiffness, mut damping, mut integral_gain, rotation) in
+            query.iter_mut()
+        {
             ui.horizontal(|ui| {
                 ui.label("Target Velocity Y:");
-                ui.add(egui::Slider::new(&mut target_velocity.0.y, -10.0..=10.0));
+                ui.add(egui::Slider::new(&mut target_velocity.0.y, -20.0..=20.0));
             });
 
             ui.separator();
@@ -132,16 +138,30 @@ fn ui_controls(
             });
             ui.horizontal(|ui| {
                 ui.label("Damping:");
-                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.000003));
+                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.0000003));
+            });
+            ui.horizontal(|ui| {
+                ui.label("Integral Gain:");
+                ui.add(egui::Slider::new(&mut integral_gain.0, 0.0..=0.000002));
             });
 
-            if let Some((relative_velocity, _, _)) = get_relative_velocity(joint, &mut body_query) {
-                ui.separator();
-                ui.label("Current Velocity:");
-                ui.horizontal(|ui| {
-                    ui.label(format!("{:.2}", relative_velocity));
-                });
+            if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+                if let Some(relative_velocity) =
+                    get_relative_angular_velocity(anchor_entity, body_entity, &velocity_query)
+                {
+                    ui.separator();
+                    ui.label("Current Velocity:");
+                    ui.horizontal(|ui| {
+                        ui.label(format!("{:.2}", relative_velocity));
+                    });
+                }
             }
+
+            ui.separator();
+            ui.label("Motor Position:");
+            ui.horizontal(|ui| {
+                ui.label(format!("{:.2}", rotation.0));
+            });
         }
     });
 }
