@@ -1,30 +1,45 @@
 use avian3d::prelude::*;
-use bevy::{math::DVec3, prelude::*};
+use bevy::prelude::*;
+
+// Conditional compilation for f32 and f64 support
+#[cfg(feature = "f64")]
+use bevy::math::DVec3 as Vector3;
+#[cfg(not(feature = "f64"))]
+use bevy::math::Vec3 as Vector3;
+
+#[cfg(not(feature = "f64"))]
+use std::f32::consts::PI;
+#[cfg(feature = "f64")]
 use std::f64::consts::PI;
 
-#[derive(Component, Debug, Clone)]
-pub struct TargetVelocity(pub DVec3);
+#[cfg(feature = "f64")]
+type Scalar = f64;
+#[cfg(not(feature = "f64"))]
+type Scalar = f32;
 
 #[derive(Component, Debug, Clone)]
-pub struct TargetRotation(pub DVec3);
+pub struct TargetVelocity(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorStiffness(pub f64);
+pub struct TargetRotation(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorDamping(pub f64);
+pub struct MotorStiffness(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorIntegralGain(pub f64);
+pub struct MotorDamping(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorMaxTorque(pub Option<f64>);
+pub struct MotorIntegralGain(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorMaxAngularVelocity(pub Option<f64>);
+pub struct MotorMaxTorque(pub Option<Scalar>);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorRotation(pub DVec3);
+pub struct MotorMaxAngularVelocity(pub Option<Scalar>);
+
+#[derive(Component, Debug, Clone)]
+pub struct MotorRotation(pub Vector3);
 
 #[derive(Bundle, Debug, Clone)]
 pub struct MotorBundle {
@@ -44,7 +59,7 @@ impl Default for MotorBundle {
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
             max_angular_velocity: MotorMaxAngularVelocity(None),
-            position: MotorRotation(DVec3::ZERO),
+            position: MotorRotation(Vector3::ZERO),
         }
     }
 }
@@ -86,7 +101,7 @@ fn get_relative_rotation(
     entity1: Entity,
     entity2: Entity,
     rotation_query: &Query<&Rotation, With<RigidBody>>,
-) -> Option<DVec3> {
+) -> Option<Vector3> {
     let anchor_rotation = rotation_query.get(entity1).ok()?;
     let body_rotation = rotation_query.get(entity2).ok()?;
 
@@ -135,8 +150,8 @@ fn apply_motor_torque_velocity(
     body_query: Query<&RigidBody>,
     velocity_query: Query<&AngularVelocity, With<RigidBody>>,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
-    mut integral_accum: Local<DVec3>,
-    mut prev_velocity_error: Local<Option<DVec3>>,
+    mut integral_accum: Local<Vector3>,
+    mut prev_velocity_error: Local<Option<Vector3>>,
     time: Res<Time>,
 ) {
     for (joint, target_velocity, stiffness, damping, integral_gain, max_torque) in
@@ -148,11 +163,11 @@ fn apply_motor_torque_velocity(
             {
                 let velocity_error = target_velocity.0 - relative_velocity;
 
-                let dt = time.delta_seconds() as f64;
+                let dt = time.delta_seconds() as Scalar;
 
                 *integral_accum += velocity_error * dt;
                 if let Some(max_torque_value) = max_torque.0 {
-                    let max_integral = max_torque_value / (integral_gain.0 + f64::EPSILON);
+                    let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
                     *integral_accum = integral_accum.clamp_length_max(max_integral);
                 }
 
@@ -162,7 +177,7 @@ fn apply_motor_torque_velocity(
                 let derivative = if let Some(prev_error) = *prev_velocity_error {
                     damping.0 * (velocity_error - prev_error) / dt
                 } else {
-                    DVec3::ZERO
+                    Vector3::ZERO
                 };
 
                 *prev_velocity_error = Some(velocity_error);
@@ -219,7 +234,7 @@ fn update_motor_rotation(
             if let Some(initial_velocity) =
                 get_relative_angular_velocity(anchor_entity, body_entity, &velocity_query)
             {
-                let delta_time = time.delta_seconds() as f64;
+                let delta_time = time.delta_seconds() as Scalar;
                 let midpoint_velocity = initial_velocity + (0.5 * delta_time * initial_velocity);
                 let delta_position = midpoint_velocity * delta_time;
                 rotation.0 += delta_position;
@@ -255,7 +270,7 @@ pub fn get_relative_angular_velocity(
     entity1: Entity,
     entity2: Entity,
     velocity_query: &Query<&AngularVelocity, With<RigidBody>>,
-) -> Option<DVec3> {
+) -> Option<Vector3> {
     let anchor_velocity = match velocity_query.get(entity1) {
         Ok(anchor_velocity) => anchor_velocity.0,
         Err(_) => return None,

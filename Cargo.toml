@@ -28,6 +28,11 @@ avian3d = { version = "0.1", default-features = false, features = [
 ] }
 bevy_egui = "0.30"
 
+[features]
+default = ["f64"]
+f32 = []
+f64 = []
+
 [profile.dev]
 opt-level = 1
 

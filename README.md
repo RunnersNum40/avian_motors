@@ -16,8 +16,6 @@ This library requires `bevy` and `avian3d` as dependencies:
 - `bevy = "0.14"`
 - `avian3d = "0.1"`
 
-Currently, only the `f64` feature set of Avian is supported, but I'll fix that soon.
-
 ### Installation
 
 Add the following dependencies to your `Cargo.toml`:
