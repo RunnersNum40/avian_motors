@@ -55,10 +55,11 @@ pub struct MotorPlugin {
 
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SubstepCount(500))
+        app.insert_resource(SubstepCount(1000))
+            .add_systems(FixedUpdate, enforce_velocity_limits)
+            .add_systems(FixedUpdate, update_motor_rotation)
             .add_systems(FixedUpdate, apply_motor_torque_velocity)
-            .add_systems(FixedUpdate, apply_motor_torque_rotation)
-            .add_systems(FixedUpdate, update_motor_rotation);
+            .add_systems(FixedUpdate, apply_motor_torque_rotation);
 
         if self.remove_dampening {
             app.add_systems(FixedUpdate, remove_dampening);
@@ -78,6 +79,47 @@ fn remove_dampening(mut query: Query<&mut RevoluteJoint, Added<RevoluteJoint>>) 
     for mut joint in query.iter_mut() {
         joint.damping_linear = 0.0;
         joint.damping_angular = 0.0;
+    }
+}
+
+fn get_relative_rotation(
+    entity1: Entity,
+    entity2: Entity,
+    rotation_query: &Query<&Rotation, With<RigidBody>>,
+) -> Option<DVec3> {
+    let anchor_rotation = rotation_query.get(entity1).ok()?;
+    let body_rotation = rotation_query.get(entity2).ok()?;
+
+    let relative_rotation = body_rotation.0 * anchor_rotation.0.inverse();
+    Some(relative_rotation.to_scaled_axis())
+}
+
+fn enforce_velocity_limits(
+    body_query: Query<&RigidBody>,
+    max_velocity_query: Query<(&RevoluteJoint, &MotorMaxAngularVelocity)>,
+    mut param_set: ParamSet<(
+        Query<&AngularVelocity, With<RigidBody>>,
+        Query<&mut AngularVelocity, With<RigidBody>>,
+    )>,
+) {
+    for (joint, max_angular_velocity) in max_velocity_query.iter() {
+        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+            if let Some(relative_velocity) =
+                get_relative_angular_velocity(anchor_entity, body_entity, &param_set.p0())
+            {
+                if let Some(max_angular_velocity) = max_angular_velocity.0 {
+                    if relative_velocity.length() > max_angular_velocity {
+                        let velocity_factor = max_angular_velocity / relative_velocity.length();
+                        if let Ok(mut body_velocity) = param_set.p1().get_mut(body_entity) {
+                            body_velocity.0 *= velocity_factor;
+                        }
+                        if let Ok(mut anchor_velocity) = param_set.p1().get_mut(anchor_entity) {
+                            anchor_velocity.0 *= velocity_factor;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -224,16 +266,4 @@ pub fn get_relative_angular_velocity(
     } else {
         None
     }
-}
-
-pub fn get_relative_rotation(
-    entity1: Entity,
-    entity2: Entity,
-    rotation_query: &Query<&Rotation, With<RigidBody>>,
-) -> Option<DVec3> {
-    let anchor_rotation = rotation_query.get(entity1).ok()?;
-    let body_rotation = rotation_query.get(entity2).ok()?;
-
-    let relative_rotation = body_rotation.0 * anchor_rotation.0.inverse();
-    Some(relative_rotation.to_scaled_axis())
 }

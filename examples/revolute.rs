@@ -6,6 +6,7 @@ use avian_motors::motor::{
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use std::f64::consts::PI;
 
 fn main() {
     App::new()
@@ -106,6 +107,7 @@ fn setup(
         TargetVelocity(Vec3::ZERO.into()),
         MotorBundle {
             stiffness: MotorStiffness(0.00001),
+            max_angular_velocity: MotorMaxAngularVelocity(Some(10.0)),
             ..Default::default()
         },
     ));
@@ -130,7 +132,10 @@ fn ui_controls(
         {
             ui.horizontal(|ui| {
                 ui.label("Target Rotation Y:");
-                ui.add(egui::Slider::new(&mut target_rotation.0.y, -200.0..=200.0));
+                ui.add(egui::Slider::new(
+                    &mut target_rotation.0.y,
+                    -100.0 * PI..=100.0 * PI,
+                ));
             });
 
             ui.separator();
