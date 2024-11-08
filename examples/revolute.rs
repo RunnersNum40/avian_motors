@@ -1,7 +1,8 @@
 use avian3d::prelude::*;
 use avian_motors::motor::{
     get_entity_pair, get_relative_angular_velocity, MotorBundle, MotorDamping, MotorIntegralGain,
-    MotorPlugin, MotorRotation, MotorStiffness, TargetVelocity,
+    MotorMaxAngularVelocity, MotorPlugin, MotorRotation, MotorStiffness, TargetRotation,
+    TargetVelocity,
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -101,6 +102,8 @@ fn setup(
 
     commands.spawn((
         joint2,
+        TargetRotation(Vec3::ZERO.into()),
+        TargetVelocity(Vec3::ZERO.into()),
         MotorBundle {
             stiffness: MotorStiffness(0.00001),
             ..Default::default()
@@ -112,7 +115,7 @@ fn ui_controls(
     mut contexts: EguiContexts,
     mut query: Query<(
         &RevoluteJoint,
-        &mut TargetVelocity,
+        &mut TargetRotation,
         &mut MotorStiffness,
         &mut MotorDamping,
         &mut MotorIntegralGain,
@@ -122,12 +125,12 @@ fn ui_controls(
     velocity_query: Query<&AngularVelocity, With<RigidBody>>,
 ) {
     egui::Window::new("Motor Control").show(contexts.ctx_mut(), |ui| {
-        for (joint, mut target_velocity, mut stiffness, mut damping, mut integral_gain, rotation) in
+        for (joint, mut target_rotation, mut stiffness, mut damping, mut integral_gain, rotation) in
             query.iter_mut()
         {
             ui.horizontal(|ui| {
-                ui.label("Target Velocity Y:");
-                ui.add(egui::Slider::new(&mut target_velocity.0.y, -20.0..=20.0));
+                ui.label("Target Rotation Y:");
+                ui.add(egui::Slider::new(&mut target_rotation.0.y, -200.0..=200.0));
             });
 
             ui.separator();

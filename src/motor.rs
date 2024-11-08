@@ -6,6 +6,9 @@ use std::f64::consts::PI;
 pub struct TargetVelocity(pub DVec3);
 
 #[derive(Component, Debug, Clone)]
+pub struct TargetRotation(pub DVec3);
+
+#[derive(Component, Debug, Clone)]
 pub struct MotorStiffness(pub f64);
 
 #[derive(Component, Debug, Clone)]
@@ -18,26 +21,29 @@ pub struct MotorIntegralGain(pub f64);
 pub struct MotorMaxTorque(pub Option<f64>);
 
 #[derive(Component, Debug, Clone)]
+pub struct MotorMaxAngularVelocity(pub Option<f64>);
+
+#[derive(Component, Debug, Clone)]
 pub struct MotorRotation(pub DVec3);
 
 #[derive(Bundle, Debug, Clone)]
 pub struct MotorBundle {
-    pub target_velocity: TargetVelocity,
     pub stiffness: MotorStiffness,
     pub damping: MotorDamping,
     pub integral_gain: MotorIntegralGain,
     pub max_torque: MotorMaxTorque,
+    pub max_angular_velocity: MotorMaxAngularVelocity,
     pub position: MotorRotation,
 }
 
 impl Default for MotorBundle {
     fn default() -> Self {
         Self {
-            target_velocity: TargetVelocity(DVec3::ZERO),
             stiffness: MotorStiffness(0.0000001),
             damping: MotorDamping(0.0),
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
+            max_angular_velocity: MotorMaxAngularVelocity(None),
             position: MotorRotation(DVec3::ZERO),
         }
     }
@@ -50,7 +56,8 @@ pub struct MotorPlugin {
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SubstepCount(500))
-            .add_systems(FixedUpdate, apply_motor_torque)
+            .add_systems(FixedUpdate, apply_motor_torque_velocity)
+            .add_systems(FixedUpdate, apply_motor_torque_rotation)
             .add_systems(FixedUpdate, update_motor_rotation);
 
         if self.remove_dampening {
@@ -74,7 +81,7 @@ fn remove_dampening(mut query: Query<&mut RevoluteJoint, Added<RevoluteJoint>>) 
     }
 }
 
-fn apply_motor_torque(
+fn apply_motor_torque_velocity(
     mut motor_query: Query<(
         &RevoluteJoint,
         &TargetVelocity,
@@ -133,6 +140,26 @@ fn apply_motor_torque(
                 if let Ok(mut anchor_torque) = torque_query.get_mut(anchor_entity) {
                     anchor_torque.set_torque(-torque);
                 }
+            }
+        }
+    }
+}
+
+fn apply_motor_torque_rotation(
+    mut motor_query: Query<(
+        &mut TargetVelocity,
+        &TargetRotation,
+        &MotorMaxAngularVelocity,
+        &MotorRotation,
+    )>,
+) {
+    for (mut target_velocity, target_rotation, max_angular_velocity, current_rotation) in
+        motor_query.iter_mut()
+    {
+        target_velocity.0 = target_rotation.0 - current_rotation.0;
+        if let Some(max_angular_velocity) = max_angular_velocity.0 {
+            if target_velocity.0.length() > max_angular_velocity {
+                target_velocity.0 = target_velocity.0.normalize() * max_angular_velocity;
             }
         }
     }
