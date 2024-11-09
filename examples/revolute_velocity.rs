@@ -2,7 +2,6 @@ use avian3d::prelude::*;
 use avian_motors::motor::{
     get_entity_pair, get_relative_angular_velocity, MotorBundle, MotorDamping, MotorIntegralGain,
     MotorMaxAngularVelocity, MotorPlugin, MotorRotation, MotorStiffness, TargetAngularVelocity,
-    TargetRotation,
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -102,12 +101,9 @@ fn setup(
 
     commands.spawn((
         joint2,
-        TargetRotation(Vec3::ZERO.into()),
         TargetAngularVelocity(Vec3::ZERO.into()),
         MotorBundle {
             stiffness: MotorStiffness(0.00001),
-            damping: MotorDamping(0.0001),
-            max_angular_velocity: MotorMaxAngularVelocity(Some(10.0)),
             ..Default::default()
         },
     ));
@@ -117,7 +113,7 @@ fn ui_controls(
     mut contexts: EguiContexts,
     mut query: Query<(
         &RevoluteJoint,
-        &mut TargetRotation,
+        &mut TargetAngularVelocity,
         &mut MotorStiffness,
         &mut MotorDamping,
         &mut MotorIntegralGain,
@@ -130,7 +126,7 @@ fn ui_controls(
     egui::Window::new("Motor Control").show(contexts.ctx_mut(), |ui| {
         for (
             joint,
-            mut target_rotation,
+            mut target_angular_velocity,
             mut stiffness,
             mut damping,
             mut integral_gain,
@@ -139,19 +135,22 @@ fn ui_controls(
         ) in query.iter_mut()
         {
             ui.horizontal(|ui| {
-                ui.label("Target Rotation Y:");
-                ui.add(egui::Slider::new(&mut target_rotation.0.y, -20.0..=20.0));
+                ui.label("Target Velocity Y:");
+                ui.add(egui::Slider::new(
+                    &mut target_angular_velocity.0.y,
+                    -20.0..=20.0,
+                ));
             });
 
             ui.separator();
             ui.label("Motor Parameters:");
             ui.horizontal(|ui| {
                 ui.label("Stiffness:");
-                ui.add(egui::Slider::new(&mut stiffness.0, 0.0..=0.00001));
+                ui.add(egui::Slider::new(&mut stiffness.0, 0.0..=0.00002));
             });
             ui.horizontal(|ui| {
                 ui.label("Damping:");
-                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.00001));
+                ui.add(egui::Slider::new(&mut damping.0, 0.0..=0.0000002));
             });
             ui.horizontal(|ui| {
                 ui.label("Integral Gain:");

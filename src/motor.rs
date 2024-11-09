@@ -18,7 +18,7 @@ type Scalar = f64;
 type Scalar = f32;
 
 #[derive(Component, Debug, Clone)]
-pub struct TargetVelocity(pub Vector3);
+pub struct TargetAngularVelocity(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
 pub struct TargetRotation(pub Vector3);
@@ -141,7 +141,7 @@ fn enforce_velocity_limits(
 fn apply_motor_torque_velocity(
     mut motor_query: Query<(
         &RevoluteJoint,
-        &TargetVelocity,
+        &TargetAngularVelocity,
         &MotorStiffness,
         &MotorDamping,
         &MotorIntegralGain,

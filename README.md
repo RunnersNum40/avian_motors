@@ -41,6 +41,7 @@ avian3d = { version = "0.1", default-features = false, features = [
 
 ## Example Usage
 
-A basic example of a motor can be found in `examples/revolute_position.rs`. To run the example:
+Some basic examples are provided in the `examples/` directory.
 
-`cargo run --example revolute_position`
+`cargo run --example revolute_position` to control a revolute joint with position control.
+`cargo run --example revolute_velocity` to control a revolute joint with velocity control.
