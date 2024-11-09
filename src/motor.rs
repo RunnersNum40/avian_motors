@@ -27,10 +27,10 @@ pub struct AngularVelocityTarget(pub Vector3);
 pub struct TargetRotation(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorStiffness(pub Scalar);
+pub struct MotorProportionalGain(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorDamping(pub Scalar);
+pub struct MotorDerivativeGain(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
 pub struct MotorIntegralGain(pub Scalar);
@@ -50,8 +50,8 @@ pub struct MotorAngularVelocity(pub Vector3);
 #[derive(Bundle, Debug, Clone)]
 pub struct RevoluteMotorBundle {
     pub motor: RevoluteMotor,
-    pub stiffness: MotorStiffness,
-    pub damping: MotorDamping,
+    pub stiffness: MotorProportionalGain,
+    pub damping: MotorDerivativeGain,
     pub integral_gain: MotorIntegralGain,
     pub max_torque: MotorMaxTorque,
     pub max_angular_velocity: MotorMaxAngularVelocity,
@@ -63,8 +63,8 @@ impl Default for RevoluteMotorBundle {
     fn default() -> Self {
         Self {
             motor: RevoluteMotor,
-            stiffness: MotorStiffness(0.0000001),
-            damping: MotorDamping(0.0),
+            stiffness: MotorProportionalGain(0.0000001),
+            damping: MotorDerivativeGain(0.0),
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
             max_angular_velocity: MotorMaxAngularVelocity(None),
@@ -171,8 +171,8 @@ fn apply_velocity_based_torque(
         (
             &RevoluteJoint,
             &AngularVelocityTarget,
-            &MotorStiffness,
-            &MotorDamping,
+            &MotorProportionalGain,
+            &MotorDerivativeGain,
             &MotorIntegralGain,
             &MotorMaxTorque,
             &MotorAngularVelocity,
@@ -242,8 +242,8 @@ fn apply_rotation_based_torque(
             &RevoluteJoint,
             &TargetRotation,
             &MotorTotalRotation,
-            &MotorStiffness,
-            &MotorDamping,
+            &MotorProportionalGain,
+            &MotorDerivativeGain,
             &MotorIntegralGain,
             &MotorMaxTorque,
         ),
