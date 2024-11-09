@@ -2,10 +2,14 @@
 
 The `avian_motors` crate provides a modular motor control system for use with the `avian3d` physics engine and the `bevy` game engine. Proper motor joints are a planned feature of Avian, so this will hopefully be obsolete soon.
 
+Currently, only revolute joints are supported, but prismatic, spherical, planar, and distance joints are planned.
+
 ## Features
 
 - Velocity or position control of revolute joints.
-- Example of motor implementation in `examples/revolute.rs`.
+- Examples of motor implementation in `examples/`.
+- `f32` and `f64` support (default is `f64`) using the `f64` or `f32` feature flags.
+  - `f32` works very poorly though, and is not recommended.
 
 ## Getting Started
 
@@ -37,6 +41,6 @@ avian3d = { version = "0.1", default-features = false, features = [
 
 ## Example Usage
 
-A basic example of a motor can be found in `examples/revolute.rs`. To run the example:
+A basic example of a motor can be found in `examples/revolute_position.rs`. To run the example:
 
-`cargo run --example revolute`
+`cargo run --example revolute_position`

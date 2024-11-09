@@ -121,14 +121,22 @@ fn ui_controls(
         &mut MotorStiffness,
         &mut MotorDamping,
         &mut MotorIntegralGain,
+        &mut MotorMaxAngularVelocity,
         &MotorRotation,
     )>,
     body_query: Query<&RigidBody>,
     velocity_query: Query<&AngularVelocity, With<RigidBody>>,
 ) {
     egui::Window::new("Motor Control").show(contexts.ctx_mut(), |ui| {
-        for (joint, mut target_rotation, mut stiffness, mut damping, mut integral_gain, rotation) in
-            query.iter_mut()
+        for (
+            joint,
+            mut target_rotation,
+            mut stiffness,
+            mut damping,
+            mut integral_gain,
+            mut max_angular_velocity,
+            rotation,
+        ) in query.iter_mut()
         {
             ui.horizontal(|ui| {
                 ui.label("Target Rotation Y:");
@@ -152,6 +160,12 @@ fn ui_controls(
                 ui.label("Integral Gain:");
                 ui.add(egui::Slider::new(&mut integral_gain.0, 0.0..=0.000002));
             });
+            if let Some(ref mut max_angular_velocity) = max_angular_velocity.0 {
+                ui.horizontal(|ui| {
+                    ui.label("Max Angular Velocity:");
+                    ui.add(egui::Slider::new(max_angular_velocity, 0.0..=50.0));
+                });
+            }
 
             if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
                 if let Some(relative_velocity) =
