@@ -153,6 +153,13 @@ fn enforce_velocity_constraints(
                 if let Some(max_angular_velocity) = max_angular_velocity.0 {
                     if relative_velocity.length() > max_angular_velocity {
                         let velocity_factor = max_angular_velocity / relative_velocity.length();
+
+                        debug!(
+                            "Clamping angular velocity to {:.4} from {:.4}",
+                            max_angular_velocity,
+                            relative_velocity.length()
+                        );
+
                         if let Ok(mut entity1_velocity) = param_set.p1().get_mut(entity1) {
                             entity1_velocity.0 *= velocity_factor;
                         }
@@ -225,6 +232,8 @@ fn apply_velocity_based_torque(
                 }
             }
 
+            debug!("Torque: {:.4}", torque);
+
             if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
                 entity1_torque.set_torque(-torque);
             }
@@ -294,6 +303,8 @@ fn apply_rotation_based_torque(
                 torque = torque.normalize() * max_torque_value;
             }
         }
+
+        debug!("Torque: {:.4}", torque);
 
         if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
             if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
