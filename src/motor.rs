@@ -66,12 +66,12 @@ impl Default for RevoluteMotorBundle {
 
 pub struct MotorPlugin {
     pub remove_dampening: bool,
+    pub substep_count: Option<u32>,
 }
 
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(SubstepCount(1000))
-            .add_systems(FixedUpdate, multi_target_warning)
+        app.add_systems(FixedUpdate, multi_target_warning)
             .add_systems(FixedUpdate, enforce_velocity_constraints)
             .add_systems(FixedUpdate, update_motor_rotation_state)
             .add_systems(FixedUpdate, apply_velocity_based_torque)
@@ -80,6 +80,10 @@ impl Plugin for MotorPlugin {
         if self.remove_dampening {
             app.add_systems(FixedUpdate, disable_damping);
         }
+
+        if let Some(substep_count) = self.substep_count {
+            app.insert_resource(SubstepCount(substep_count));
+        }
     }
 }
 
@@ -87,6 +91,7 @@ impl Default for MotorPlugin {
     fn default() -> Self {
         Self {
             remove_dampening: true,
+            substep_count: Some(1000),
         }
     }
 }
