@@ -18,7 +18,7 @@ type Scalar = f64;
 type Scalar = f32;
 
 #[derive(Component, Debug, Clone)]
-pub struct TargetAngularVelocity(pub Vector3);
+pub struct AngularVelocityTarget(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
 pub struct TargetRotation(pub Vector3);
@@ -39,19 +39,19 @@ pub struct MotorMaxTorque(pub Option<Scalar>);
 pub struct MotorMaxAngularVelocity(pub Option<Scalar>);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorRotation(pub Vector3);
+pub struct MotorTotalRotation(pub Vector3);
 
 #[derive(Bundle, Debug, Clone)]
-pub struct MotorBundle {
+pub struct RevoluteMotorBundle {
     pub stiffness: MotorStiffness,
     pub damping: MotorDamping,
     pub integral_gain: MotorIntegralGain,
     pub max_torque: MotorMaxTorque,
     pub max_angular_velocity: MotorMaxAngularVelocity,
-    pub position: MotorRotation,
+    pub total_rotation: MotorTotalRotation,
 }
 
-impl Default for MotorBundle {
+impl Default for RevoluteMotorBundle {
     fn default() -> Self {
         Self {
             stiffness: MotorStiffness(0.0000001),
@@ -59,7 +59,7 @@ impl Default for MotorBundle {
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
             max_angular_velocity: MotorMaxAngularVelocity(None),
-            position: MotorRotation(Vector3::ZERO),
+            total_rotation: MotorTotalRotation(Vector3::ZERO),
         }
     }
 }
@@ -72,13 +72,13 @@ impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SubstepCount(1000))
             .add_systems(FixedUpdate, multi_target_warning)
-            .add_systems(FixedUpdate, enforce_velocity_limits)
-            .add_systems(FixedUpdate, update_motor_rotation)
-            .add_systems(FixedUpdate, apply_motor_torque_velocity)
-            .add_systems(FixedUpdate, apply_motor_torque_rotation);
+            .add_systems(FixedUpdate, enforce_velocity_constraints)
+            .add_systems(FixedUpdate, update_motor_rotation_state)
+            .add_systems(FixedUpdate, apply_velocity_based_torque)
+            .add_systems(FixedUpdate, apply_rotation_based_torque);
 
         if self.remove_dampening {
-            app.add_systems(FixedUpdate, remove_dampening);
+            app.add_systems(FixedUpdate, disable_damping);
         }
     }
 }
@@ -93,8 +93,8 @@ impl Default for MotorPlugin {
 
 fn multi_target_warning(
     query: Query<
-        (&TargetAngularVelocity, &TargetRotation),
-        Or<(Added<TargetAngularVelocity>, Added<TargetRotation>)>,
+        (&AngularVelocityTarget, &TargetRotation),
+        Or<(Added<AngularVelocityTarget>, Added<TargetRotation>)>,
     >,
 ) {
     for _ in query.iter() {
@@ -102,7 +102,7 @@ fn multi_target_warning(
     }
 }
 
-fn remove_dampening(mut query: Query<&mut RevoluteJoint, Added<RevoluteJoint>>) {
+fn disable_damping(mut query: Query<&mut RevoluteJoint, Added<RevoluteJoint>>) {
     for mut joint in query.iter_mut() {
         joint.damping_linear = 0.0;
         joint.damping_angular = 0.0;
@@ -121,7 +121,7 @@ fn get_relative_rotation(
     Some(relative_rotation.to_scaled_axis())
 }
 
-fn enforce_velocity_limits(
+fn enforce_velocity_constraints(
     body_query: Query<&RigidBody>,
     max_velocity_query: Query<(&RevoluteJoint, &MotorMaxAngularVelocity)>,
     mut param_set: ParamSet<(
@@ -130,18 +130,18 @@ fn enforce_velocity_limits(
     )>,
 ) {
     for (joint, max_angular_velocity) in max_velocity_query.iter() {
-        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+        if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
             if let Some(relative_velocity) =
-                get_relative_angular_velocity(anchor_entity, body_entity, &param_set.p0())
+                get_relative_angular_velocity(entity1, entity2, &param_set.p0())
             {
                 if let Some(max_angular_velocity) = max_angular_velocity.0 {
                     if relative_velocity.length() > max_angular_velocity {
                         let velocity_factor = max_angular_velocity / relative_velocity.length();
-                        if let Ok(mut body_velocity) = param_set.p1().get_mut(body_entity) {
-                            body_velocity.0 *= velocity_factor;
+                        if let Ok(mut entity1_velocity) = param_set.p1().get_mut(entity1) {
+                            entity1_velocity.0 *= velocity_factor;
                         }
-                        if let Ok(mut anchor_velocity) = param_set.p1().get_mut(anchor_entity) {
-                            anchor_velocity.0 *= velocity_factor;
+                        if let Ok(mut entity2_velocity) = param_set.p1().get_mut(entity2) {
+                            entity2_velocity.0 *= velocity_factor;
                         }
                     }
                 }
@@ -150,11 +150,11 @@ fn enforce_velocity_limits(
     }
 }
 
-fn apply_motor_torque_velocity(
+fn apply_velocity_based_torque(
     mut motor_query: Query<
         (
             &RevoluteJoint,
-            &TargetAngularVelocity,
+            &AngularVelocityTarget,
             &MotorStiffness,
             &MotorDamping,
             &MotorIntegralGain,
@@ -169,12 +169,12 @@ fn apply_motor_torque_velocity(
     mut prev_velocity_error: Local<Option<Vector3>>,
     time: Res<Time>,
 ) {
-    for (joint, target_velocity, stiffness, damping, integral_gain, max_torque) in
+    for (joint, target_velocity, proportional_gain, derivative_gain, integral_gain, max_torque) in
         motor_query.iter_mut()
     {
-        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+        if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
             if let Some(relative_velocity) =
-                get_relative_angular_velocity(anchor_entity, body_entity, &velocity_query)
+                get_relative_angular_velocity(entity1, entity2, &velocity_query)
             {
                 let velocity_error = target_velocity.0 - relative_velocity;
 
@@ -186,11 +186,11 @@ fn apply_motor_torque_velocity(
                     *integral_accum = integral_accum.clamp_length_max(max_integral);
                 }
 
-                let proportional = stiffness.0 * velocity_error;
+                let proportional = proportional_gain.0 * velocity_error;
                 let integral = integral_gain.0 * *integral_accum;
 
                 let derivative = if let Some(prev_error) = *prev_velocity_error {
-                    damping.0 * (velocity_error - prev_error) / dt
+                    derivative_gain.0 * (velocity_error - prev_error) / dt
                 } else {
                     Vector3::ZERO
                 };
@@ -205,30 +205,30 @@ fn apply_motor_torque_velocity(
                     }
                 }
 
-                if let Ok(mut body_torque) = torque_query.get_mut(body_entity) {
-                    body_torque.set_torque(torque);
+                if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
+                    entity1_torque.set_torque(-torque);
                 }
 
-                if let Ok(mut anchor_torque) = torque_query.get_mut(anchor_entity) {
-                    anchor_torque.set_torque(-torque);
+                if let Ok(mut entity2_torque) = torque_query.get_mut(entity2) {
+                    entity2_torque.set_torque(torque);
                 }
             }
         }
     }
 }
 
-fn apply_motor_torque_rotation(
+fn apply_rotation_based_torque(
     mut motor_query: Query<
         (
             &RevoluteJoint,
             &TargetRotation,
-            &MotorRotation,
+            &MotorTotalRotation,
             &MotorStiffness,
             &MotorDamping,
             &MotorIntegralGain,
             &MotorMaxTorque,
         ),
-        Without<TargetAngularVelocity>,
+        Without<AngularVelocityTarget>,
     >,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
     body_query: Query<&RigidBody>,
@@ -240,9 +240,9 @@ fn apply_motor_torque_rotation(
         joint,
         target_rotation,
         current_rotation,
-        stiffness,     // Kp
-        damping,       // Kd
-        integral_gain, // Ki
+        proportional_gain,
+        derivative_gain,
+        integral_gain,
         max_torque,
     ) in motor_query.iter_mut()
     {
@@ -264,9 +264,9 @@ fn apply_motor_torque_rotation(
 
         *prev_error = Some(position_error);
 
-        let proportional = stiffness.0 * position_error;
+        let proportional = proportional_gain.0 * position_error;
         let integral = integral_gain.0 * *integral_accum;
-        let derivative = damping.0 * derivative;
+        let derivative = derivative_gain.0 * derivative;
 
         let mut torque = proportional + integral - derivative;
 
@@ -276,28 +276,28 @@ fn apply_motor_torque_rotation(
             }
         }
 
-        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
-            if let Ok(mut body_torque) = torque_query.get_mut(body_entity) {
-                body_torque.set_torque(torque);
+        if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
+            if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
+                entity1_torque.set_torque(-torque);
             }
-            if let Ok(mut anchor_torque) = torque_query.get_mut(anchor_entity) {
-                anchor_torque.set_torque(-torque);
+            if let Ok(mut entity2_torque) = torque_query.get_mut(entity2) {
+                entity2_torque.set_torque(torque);
             }
         }
     }
 }
 
-fn update_motor_rotation(
-    mut query: Query<(&RevoluteJoint, &mut MotorRotation)>,
+fn update_motor_rotation_state(
+    mut query: Query<(&RevoluteJoint, &mut MotorTotalRotation)>,
     body_query: Query<&RigidBody>,
     rotation_query: Query<&Rotation, With<RigidBody>>,
     velocity_query: Query<&AngularVelocity, With<RigidBody>>,
     time: Res<Time>,
 ) {
     for (joint, mut rotation) in query.iter_mut() {
-        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+        if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
             if let Some(initial_velocity) =
-                get_relative_angular_velocity(anchor_entity, body_entity, &velocity_query)
+                get_relative_angular_velocity(entity1, entity2, &velocity_query)
             {
                 let delta_time = time.delta_seconds() as Scalar;
                 let midpoint_velocity = initial_velocity + (0.5 * delta_time * initial_velocity);
@@ -306,7 +306,7 @@ fn update_motor_rotation(
             }
 
             if let Some(relative_rotation) =
-                get_relative_rotation(anchor_entity, body_entity, &rotation_query)
+                get_relative_rotation(entity1, entity2, &rotation_query)
             {
                 let rotation_error = rotation.0 - relative_rotation;
                 let rotation_error = (rotation_error + PI) % (2.0 * PI) - PI;
@@ -323,9 +323,9 @@ pub fn get_entity_pair(
     joint: &RevoluteJoint,
     body_query: &Query<&RigidBody>,
 ) -> Option<(Entity, Entity)> {
-    let (anchor_entity, body_entity) = (joint.entity1, joint.entity2);
-    if body_query.get(anchor_entity).is_ok() && body_query.get(body_entity).is_ok() {
-        Some((anchor_entity, body_entity))
+    let (entity1, entity2) = (joint.entity1, joint.entity2);
+    if body_query.get(entity1).is_ok() && body_query.get(entity2).is_ok() {
+        Some((entity1, entity2))
     } else {
         None
     }
@@ -337,12 +337,12 @@ pub fn get_relative_angular_velocity(
     velocity_query: &Query<&AngularVelocity, With<RigidBody>>,
 ) -> Option<Vector3> {
     let anchor_velocity = match velocity_query.get(entity1) {
-        Ok(anchor_velocity) => anchor_velocity.0,
+        Ok(entity1_velocity) => entity1_velocity.0,
         Err(_) => return None,
     };
 
-    if let Ok(body_velocity) = velocity_query.get(entity2) {
-        Some(body_velocity.0 - anchor_velocity)
+    if let Ok(entity2_velocity) = velocity_query.get(entity2) {
+        Some(entity2_velocity.0 - anchor_velocity)
     } else {
         None
     }
