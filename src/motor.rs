@@ -44,6 +44,9 @@ pub struct MotorMaxAngularVelocity(pub Option<Scalar>);
 #[derive(Component, Debug, Clone)]
 pub struct MotorTotalRotation(pub Vector3);
 
+#[derive(Component, Debug, Clone)]
+pub struct MotorAngularVelocity(pub Vector3);
+
 #[derive(Bundle, Debug, Clone)]
 pub struct RevoluteMotorBundle {
     pub motor: RevoluteMotor,
@@ -53,6 +56,7 @@ pub struct RevoluteMotorBundle {
     pub max_torque: MotorMaxTorque,
     pub max_angular_velocity: MotorMaxAngularVelocity,
     pub total_rotation: MotorTotalRotation,
+    pub angular_velocity: MotorAngularVelocity,
 }
 
 impl Default for RevoluteMotorBundle {
@@ -65,6 +69,7 @@ impl Default for RevoluteMotorBundle {
             max_torque: MotorMaxTorque(None),
             max_angular_velocity: MotorMaxAngularVelocity(None),
             total_rotation: MotorTotalRotation(Vector3::ZERO),
+            angular_velocity: MotorAngularVelocity(Vector3::ZERO),
         }
     }
 }
@@ -79,6 +84,7 @@ impl Plugin for MotorPlugin {
         app.add_systems(FixedUpdate, multi_target_warning)
             .add_systems(FixedUpdate, enforce_velocity_constraints)
             .add_systems(FixedUpdate, update_motor_rotation_state)
+            .add_systems(FixedUpdate, update_motor_angular_velocity_state)
             .add_systems(FixedUpdate, apply_velocity_based_torque)
             .add_systems(FixedUpdate, apply_rotation_based_torque);
 
@@ -169,59 +175,62 @@ fn apply_velocity_based_torque(
             &MotorDamping,
             &MotorIntegralGain,
             &MotorMaxTorque,
+            &MotorAngularVelocity,
         ),
         Without<TargetRotation>,
     >,
     body_query: Query<&RigidBody>,
-    velocity_query: Query<&AngularVelocity, With<RigidBody>>,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
     mut integral_accum: Local<Vector3>,
     mut prev_velocity_error: Local<Option<Vector3>>,
     time: Res<Time>,
 ) {
-    for (joint, target_velocity, proportional_gain, derivative_gain, integral_gain, max_torque) in
-        motor_query.iter_mut()
+    for (
+        joint,
+        target_velocity,
+        proportional_gain,
+        derivative_gain,
+        integral_gain,
+        max_torque,
+        relative_velocity,
+    ) in motor_query.iter_mut()
     {
         if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
-            if let Some(relative_velocity) =
-                get_relative_angular_velocity(entity1, entity2, &velocity_query)
-            {
-                let velocity_error = target_velocity.0 - relative_velocity;
+            let velocity_error = target_velocity.0 - relative_velocity.0;
 
-                let dt = time.delta_seconds() as Scalar;
+            let dt = time.delta_seconds() as Scalar;
 
-                *integral_accum += velocity_error * dt;
-                if let Some(max_torque_value) = max_torque.0 {
-                    let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
-                    *integral_accum = integral_accum.clamp_length_max(max_integral);
+            *integral_accum += velocity_error * dt;
+            if let Some(max_torque_value) = max_torque.0 {
+                let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
+                *integral_accum = integral_accum.clamp_length_max(max_integral);
+            }
+
+            let proportional = proportional_gain.0 * velocity_error;
+            let integral = integral_gain.0 * *integral_accum;
+
+            let derivative = if let Some(prev_error) = *prev_velocity_error {
+                derivative_gain.0 * (velocity_error - prev_error) / dt
+            } else {
+                Vector3::ZERO
+            };
+
+            *prev_velocity_error = Some(velocity_error);
+
+            let mut torque = proportional + integral - derivative;
+
+            if let Some(max_torque_value) = max_torque.0 {
+                if torque.length() > max_torque_value {
+                    torque = torque.normalize() * max_torque_value;
                 }
+            }
 
-                let proportional = proportional_gain.0 * velocity_error;
-                let integral = integral_gain.0 * *integral_accum;
+            if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
+                entity1_torque.set_torque(-torque);
+            }
 
-                let derivative = if let Some(prev_error) = *prev_velocity_error {
-                    derivative_gain.0 * (velocity_error - prev_error) / dt
-                } else {
-                    Vector3::ZERO
-                };
-
-                *prev_velocity_error = Some(velocity_error);
-
-                let mut torque = proportional + integral - derivative;
-
-                if let Some(max_torque_value) = max_torque.0 {
-                    if torque.length() > max_torque_value {
-                        torque = torque.normalize() * max_torque_value;
-                    }
-                }
-
-                if let Ok(mut entity1_torque) = torque_query.get_mut(entity1) {
-                    entity1_torque.set_torque(-torque);
-                }
-
-                if let Ok(mut entity2_torque) = torque_query.get_mut(entity2) {
-                    entity2_torque.set_torque(torque);
-                }
+            if let Ok(mut entity2_torque) = torque_query.get_mut(entity2) {
+                entity2_torque.set_torque(torque);
             }
         }
     }
@@ -298,22 +307,21 @@ fn apply_rotation_based_torque(
 }
 
 fn update_motor_rotation_state(
-    mut query: Query<(&RevoluteJoint, &mut MotorTotalRotation)>,
+    mut query: Query<(
+        &RevoluteJoint,
+        &mut MotorTotalRotation,
+        &MotorAngularVelocity,
+    )>,
     body_query: Query<&RigidBody>,
     rotation_query: Query<&Rotation, With<RigidBody>>,
-    velocity_query: Query<&AngularVelocity, With<RigidBody>>,
     time: Res<Time>,
 ) {
-    for (joint, mut rotation) in query.iter_mut() {
+    for (joint, mut rotation, initial_velocity) in query.iter_mut() {
         if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
-            if let Some(initial_velocity) =
-                get_relative_angular_velocity(entity1, entity2, &velocity_query)
-            {
-                let delta_time = time.delta_seconds() as Scalar;
-                let midpoint_velocity = initial_velocity + (0.5 * delta_time * initial_velocity);
-                let delta_position = midpoint_velocity * delta_time;
-                rotation.0 += delta_position;
-            }
+            let delta_time = time.delta_seconds() as Scalar;
+            let midpoint_velocity = initial_velocity.0 + (0.5 * delta_time * initial_velocity.0);
+            let delta_position = midpoint_velocity * delta_time;
+            rotation.0 += delta_position;
 
             if let Some(relative_rotation) =
                 get_relative_rotation(entity1, entity2, &rotation_query)
@@ -329,7 +337,23 @@ fn update_motor_rotation_state(
     }
 }
 
-pub fn get_entity_pair(
+fn update_motor_angular_velocity_state(
+    mut query: Query<(&RevoluteJoint, &mut MotorAngularVelocity)>,
+    body_query: Query<&RigidBody>,
+    velocity_query: Query<&AngularVelocity, With<RigidBody>>,
+) {
+    for (joint, mut angular_velocity) in query.iter_mut() {
+        if let Some((entity1, entity2)) = get_entity_pair(joint, &body_query) {
+            if let Some(relative_velocity) =
+                get_relative_angular_velocity(entity1, entity2, &velocity_query)
+            {
+                angular_velocity.0 = relative_velocity;
+            }
+        }
+    }
+}
+
+fn get_entity_pair(
     joint: &RevoluteJoint,
     body_query: &Query<&RigidBody>,
 ) -> Option<(Entity, Entity)> {
@@ -341,7 +365,7 @@ pub fn get_entity_pair(
     }
 }
 
-pub fn get_relative_angular_velocity(
+fn get_relative_angular_velocity(
     entity1: Entity,
     entity2: Entity,
     velocity_query: &Query<&AngularVelocity, With<RigidBody>>,

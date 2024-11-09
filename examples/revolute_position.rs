@@ -1,8 +1,7 @@
 use avian3d::prelude::*;
 use avian_motors::motor::{
-    get_entity_pair, get_relative_angular_velocity, MotorDamping, MotorIntegralGain,
-    MotorMaxAngularVelocity, MotorPlugin, MotorStiffness, MotorTotalRotation, RevoluteMotorBundle,
-    TargetRotation,
+    MotorAngularVelocity, MotorDamping, MotorIntegralGain, MotorMaxAngularVelocity, MotorPlugin,
+    MotorStiffness, MotorTotalRotation, RevoluteMotorBundle, TargetRotation,
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -115,26 +114,24 @@ fn setup(
 fn ui_controls(
     mut contexts: EguiContexts,
     mut query: Query<(
-        &RevoluteJoint,
         &mut TargetRotation,
         &mut MotorStiffness,
         &mut MotorDamping,
         &mut MotorIntegralGain,
         &mut MotorMaxAngularVelocity,
         &MotorTotalRotation,
+        &MotorAngularVelocity,
     )>,
-    body_query: Query<&RigidBody>,
-    velocity_query: Query<&AngularVelocity, With<RigidBody>>,
 ) {
     egui::Window::new("Motor Control").show(contexts.ctx_mut(), |ui| {
         for (
-            joint,
             mut target_rotation,
             mut stiffness,
             mut damping,
             mut integral_gain,
             mut max_angular_velocity,
             rotation,
+            velocity,
         ) in query.iter_mut()
         {
             ui.horizontal(|ui| {
@@ -163,17 +160,11 @@ fn ui_controls(
                 });
             }
 
-            if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
-                if let Some(relative_velocity) =
-                    get_relative_angular_velocity(anchor_entity, body_entity, &velocity_query)
-                {
-                    ui.separator();
-                    ui.label("Current Velocity:");
-                    ui.horizontal(|ui| {
-                        ui.label(format!("{:.2}", relative_velocity));
-                    });
-                }
-            }
+            ui.separator();
+            ui.label("Current Velocity:");
+            ui.horizontal(|ui| {
+                ui.label(format!("{:.2}", velocity.0));
+            });
 
             ui.separator();
             ui.label("Motor Position:");
