@@ -1,8 +1,7 @@
 use avian3d::prelude::*;
 use avian_motors::motor::{
     get_entity_pair, get_relative_angular_velocity, MotorBundle, MotorDamping, MotorIntegralGain,
-    MotorMaxAngularVelocity, MotorPlugin, MotorRotation, MotorStiffness, TargetAngularVelocity,
-    TargetRotation,
+    MotorMaxAngularVelocity, MotorPlugin, MotorRotation, MotorStiffness, TargetRotation,
 };
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
@@ -103,7 +102,6 @@ fn setup(
     commands.spawn((
         joint2,
         TargetRotation(Vec3::ZERO.into()),
-        TargetAngularVelocity(Vec3::ZERO.into()),
         MotorBundle {
             stiffness: MotorStiffness(0.00001),
             damping: MotorDamping(0.0001),

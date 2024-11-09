@@ -71,6 +71,7 @@ pub struct MotorPlugin {
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SubstepCount(1000))
+            .add_systems(FixedUpdate, multi_target_warning)
             .add_systems(FixedUpdate, enforce_velocity_limits)
             .add_systems(FixedUpdate, update_motor_rotation)
             .add_systems(FixedUpdate, apply_motor_torque_velocity)
@@ -87,6 +88,17 @@ impl Default for MotorPlugin {
         Self {
             remove_dampening: true,
         }
+    }
+}
+
+fn multi_target_warning(
+    query: Query<
+        (&TargetAngularVelocity, &TargetRotation),
+        Or<(Added<TargetAngularVelocity>, Added<TargetRotation>)>,
+    >,
+) {
+    for _ in query.iter() {
+        warn!("Multiple motor targets detected. Only one target per motor is supported.");
     }
 }
 
@@ -139,14 +151,17 @@ fn enforce_velocity_limits(
 }
 
 fn apply_motor_torque_velocity(
-    mut motor_query: Query<(
-        &RevoluteJoint,
-        &TargetAngularVelocity,
-        &MotorStiffness,
-        &MotorDamping,
-        &MotorIntegralGain,
-        &MotorMaxTorque,
-    )>,
+    mut motor_query: Query<
+        (
+            &RevoluteJoint,
+            &TargetAngularVelocity,
+            &MotorStiffness,
+            &MotorDamping,
+            &MotorIntegralGain,
+            &MotorMaxTorque,
+        ),
+        Without<TargetRotation>,
+    >,
     body_query: Query<&RigidBody>,
     velocity_query: Query<&AngularVelocity, With<RigidBody>>,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
@@ -203,15 +218,18 @@ fn apply_motor_torque_velocity(
 }
 
 fn apply_motor_torque_rotation(
-    mut motor_query: Query<(
-        &RevoluteJoint,
-        &TargetRotation,
-        &MotorRotation,
-        &MotorStiffness,
-        &MotorDamping,
-        &MotorIntegralGain,
-        &MotorMaxTorque,
-    )>,
+    mut motor_query: Query<
+        (
+            &RevoluteJoint,
+            &TargetRotation,
+            &MotorRotation,
+            &MotorStiffness,
+            &MotorDamping,
+            &MotorIntegralGain,
+            &MotorMaxTorque,
+        ),
+        Without<TargetAngularVelocity>,
+    >,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
     body_query: Query<&RigidBody>,
     mut integral_accum: Local<Vector3>,
