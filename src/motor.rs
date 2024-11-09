@@ -204,19 +204,66 @@ fn apply_motor_torque_velocity(
 
 fn apply_motor_torque_rotation(
     mut motor_query: Query<(
-        &mut TargetVelocity,
+        &RevoluteJoint,
         &TargetRotation,
-        &MotorMaxAngularVelocity,
         &MotorRotation,
+        &MotorStiffness,
+        &MotorDamping,
+        &MotorIntegralGain,
+        &MotorMaxTorque,
     )>,
+    mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
+    body_query: Query<&RigidBody>,
+    mut integral_accum: Local<Vector3>,
+    mut prev_error: Local<Option<Vector3>>,
+    time: Res<Time>,
 ) {
-    for (mut target_velocity, target_rotation, max_angular_velocity, current_rotation) in
-        motor_query.iter_mut()
+    for (
+        joint,
+        target_rotation,
+        current_rotation,
+        stiffness,     // Kp
+        damping,       // Kd
+        integral_gain, // Ki
+        max_torque,
+    ) in motor_query.iter_mut()
     {
-        target_velocity.0 = target_rotation.0 - current_rotation.0;
-        if let Some(max_angular_velocity) = max_angular_velocity.0 {
-            if target_velocity.0.length() > max_angular_velocity {
-                target_velocity.0 = target_velocity.0.normalize() * max_angular_velocity;
+        let position_error = target_rotation.0 - current_rotation.0;
+
+        let dt = time.delta_seconds() as Scalar;
+
+        *integral_accum += position_error * dt;
+        if let Some(max_torque_value) = max_torque.0 {
+            let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
+            *integral_accum = integral_accum.clamp_length_max(max_integral);
+        }
+
+        let derivative = if let Some(prev_err) = *prev_error {
+            (prev_err - position_error) / dt
+        } else {
+            Vector3::ZERO
+        };
+
+        *prev_error = Some(position_error);
+
+        let proportional = stiffness.0 * position_error;
+        let integral = integral_gain.0 * *integral_accum;
+        let derivative = damping.0 * derivative;
+
+        let mut torque = proportional + integral - derivative;
+
+        if let Some(max_torque_value) = max_torque.0 {
+            if torque.length() > max_torque_value {
+                torque = torque.normalize() * max_torque_value;
+            }
+        }
+
+        if let Some((anchor_entity, body_entity)) = get_entity_pair(joint, &body_query) {
+            if let Ok(mut body_torque) = torque_query.get_mut(body_entity) {
+                body_torque.set_torque(torque);
+            }
+            if let Ok(mut anchor_torque) = torque_query.get_mut(anchor_entity) {
+                anchor_torque.set_torque(-torque);
             }
         }
     }
