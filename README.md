@@ -44,4 +44,7 @@ avian3d = { version = "0.1", default-features = false, features = [
 Some basic examples are provided in the `examples/` directory.
 
 `cargo run --example revolute_position` to control a revolute joint with position control.
+![](media/position.gif)
+
 `cargo run --example revolute_velocity` to control a revolute joint with velocity control.
+![](media/velocity.gif)
