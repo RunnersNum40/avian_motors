@@ -18,6 +18,9 @@ type Scalar = f64;
 type Scalar = f32;
 
 #[derive(Component, Debug, Clone)]
+pub struct RevoluteMotor;
+
+#[derive(Component, Debug, Clone)]
 pub struct AngularVelocityTarget(pub Vector3);
 
 #[derive(Component, Debug, Clone)]
@@ -43,6 +46,7 @@ pub struct MotorTotalRotation(pub Vector3);
 
 #[derive(Bundle, Debug, Clone)]
 pub struct RevoluteMotorBundle {
+    pub motor: RevoluteMotor,
     pub stiffness: MotorStiffness,
     pub damping: MotorDamping,
     pub integral_gain: MotorIntegralGain,
@@ -54,6 +58,7 @@ pub struct RevoluteMotorBundle {
 impl Default for RevoluteMotorBundle {
     fn default() -> Self {
         Self {
+            motor: RevoluteMotor,
             stiffness: MotorStiffness(0.0000001),
             damping: MotorDamping(0.0),
             integral_gain: MotorIntegralGain(0.0),
@@ -107,7 +112,7 @@ fn multi_target_warning(
     }
 }
 
-fn disable_damping(mut query: Query<&mut RevoluteJoint, Added<RevoluteJoint>>) {
+fn disable_damping(mut query: Query<&mut RevoluteJoint, Added<RevoluteMotor>>) {
     for mut joint in query.iter_mut() {
         joint.damping_linear = 0.0;
         joint.damping_angular = 0.0;
