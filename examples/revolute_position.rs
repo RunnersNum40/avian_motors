@@ -14,9 +14,30 @@ fn main() {
             EguiPlugin,
             MotorPlugin::default(),
         ))
+        .insert_resource(Gravity(Vec3::ZERO.into()))
         .add_systems(Startup, setup)
         .add_systems(Update, ui_controls)
         .run();
+}
+
+fn create_transform_to_origin(vec: Vec3) -> Transform {
+    let direction_to_origin = -vec.normalize();
+    let global_up = Vec3::Y;
+    let rotation = if direction_to_origin.abs_diff_eq(global_up, 1e-6) {
+        Quat::IDENTITY
+    } else if direction_to_origin.abs_diff_eq(-global_up, 1e-6) {
+        Quat::from_rotation_x(std::f32::consts::PI)
+    } else {
+        let rotation_axis = global_up.cross(direction_to_origin).normalize();
+        let angle = global_up.dot(direction_to_origin).acos();
+        Quat::from_axis_angle(rotation_axis, angle)
+    };
+
+    Transform {
+        translation: vec,
+        rotation,
+        ..Default::default()
+    }
 }
 
 fn setup(
@@ -39,31 +60,28 @@ fn setup(
     commands.spawn(directional_light);
 
     let camera = (Camera3dBundle {
-        transform: Transform::from_xyz(0.3, 0.3, 0.3).looking_at(Vec3::ZERO, Vec3::Y),
+        transform: Transform::from_xyz(0.0, 0.2, 0.3).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
     },);
 
     commands.spawn(camera);
 
-    let offset = Vec3::new(0.0, 0.1, 0.0);
+    let offset = Vec3::new(1.0, 1.0, 0.0).normalize() * 0.1;
 
     let anchor_entity = {
         commands
-            .spawn((
-                RigidBody::Static,
-                Transform::from_translation(offset / -2.0),
-            ))
+            .spawn((RigidBody::Static, create_transform_to_origin(-offset / 2.0)))
             .id()
     };
 
     let entity1 = {
         commands
             .spawn((
-                RigidBody::Dynamic,
+                RigidBody::Kinematic,
                 PbrBundle {
                     mesh: meshes.add(Mesh::from(Cuboid::new(0.1, 0.05, 0.1))),
                     material: materials.add(Color::srgb(0.6, 0.5, 0.5)),
-                    transform: Transform::from_translation(offset / -2.0),
+                    transform: create_transform_to_origin(-offset / 2.0),
                     ..Default::default()
                 },
                 ColliderConstructor::ConvexDecompositionFromMesh,
@@ -78,7 +96,7 @@ fn setup(
                 PbrBundle {
                     mesh: meshes.add(Mesh::from(Cuboid::new(0.1, 0.05, 0.1))),
                     material: materials.add(Color::srgb(0.6, 0.5, 0.5)),
-                    transform: Transform::from_translation(offset / 2.0),
+                    transform: create_transform_to_origin(offset / 2.0),
                     ..Default::default()
                 },
                 ColliderConstructor::ConvexDecompositionFromMesh,
@@ -88,24 +106,25 @@ fn setup(
 
     let joint1 = RevoluteJoint::new(anchor_entity, entity1)
         .with_compliance(0.0)
-        .with_angular_velocity_damping(0.0)
+        .with_angular_velocity_damping(1.0)
         .with_linear_velocity_damping(0.0)
-        .with_aligned_axis(offset.into());
+        .with_aligned_axis(Vec3::Y.into());
 
     let joint2 = RevoluteJoint::new(entity1, entity2)
         .with_compliance(0.0)
-        .with_aligned_axis(offset.into())
-        .with_local_anchor_1(offset.into());
+        .with_aligned_axis(Vec3::Y.into())
+        .with_local_anchor_1((Vec3::Y * offset.length() / 2.0).into())
+        .with_local_anchor_2((Vec3::NEG_Y * offset.length() / 2.0).into());
 
     commands.spawn(joint1);
 
     commands.spawn((
         joint2,
-        TargetRotation(Vec3::ZERO.into()),
+        TargetRotation(0.0),
         RevoluteMotorBundle {
             stiffness: MotorProportionalGain(0.00001),
             damping: MotorDerivativeGain(0.0001),
-            max_angular_velocity: MotorMaxAngularVelocity(Some(10.0)),
+            max_angular_velocity: MotorMaxAngularVelocity(Some(20.0)),
             ..Default::default()
         },
     ));
@@ -135,8 +154,8 @@ fn ui_controls(
         ) in query.iter_mut()
         {
             ui.horizontal(|ui| {
-                ui.label("Target Rotation Y:");
-                ui.add(egui::Slider::new(&mut target_rotation.0.y, -20.0..=20.0));
+                ui.label("Target Rotation");
+                ui.add(egui::Slider::new(&mut target_rotation.0, -20.0..=20.0));
             });
 
             ui.separator();

@@ -21,10 +21,10 @@ type Scalar = f32;
 pub struct RevoluteMotor;
 
 #[derive(Component, Debug, Clone)]
-pub struct AngularVelocityTarget(pub Vector3);
+pub struct AngularVelocityTarget(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct TargetRotation(pub Vector3);
+pub struct TargetRotation(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
 pub struct MotorProportionalGain(pub Scalar);
@@ -42,10 +42,10 @@ pub struct MotorMaxTorque(pub Option<Scalar>);
 pub struct MotorMaxAngularVelocity(pub Option<Scalar>);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorTotalRotation(pub Vector3);
+pub struct MotorTotalRotation(pub Scalar);
 
 #[derive(Component, Debug, Clone)]
-pub struct MotorAngularVelocity(pub Vector3);
+pub struct MotorAngularVelocity(pub Scalar);
 
 #[derive(Bundle, Debug, Clone)]
 pub struct RevoluteMotorBundle {
@@ -68,8 +68,8 @@ impl Default for RevoluteMotorBundle {
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
             max_angular_velocity: MotorMaxAngularVelocity(None),
-            total_rotation: MotorTotalRotation(Vector3::ZERO),
-            angular_velocity: MotorAngularVelocity(Vector3::ZERO),
+            total_rotation: MotorTotalRotation(0.0),
+            angular_velocity: MotorAngularVelocity(0.0),
         }
     }
 }
@@ -82,6 +82,7 @@ pub struct MotorPlugin {
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, multi_target_warning)
+            .add_systems(FixedUpdate, non_normalized_axis_warning)
             .add_systems(FixedUpdate, enforce_velocity_constraints)
             .add_systems(FixedUpdate, update_motor_rotation_state)
             .add_systems(FixedUpdate, update_motor_angular_velocity_state)
@@ -107,6 +108,14 @@ impl Default for MotorPlugin {
     }
 }
 
+fn non_normalized_axis_warning(query: Query<&RevoluteJoint, Added<RevoluteMotor>>) {
+    for joint in query.iter() {
+        if joint.aligned_axis.length() != 1.0 {
+            error!("Aligned axis must be normalized for motor to work")
+        }
+    }
+}
+
 fn multi_target_warning(
     query: Query<
         (&AngularVelocityTarget, &TargetRotation),
@@ -123,18 +132,6 @@ fn disable_damping(mut query: Query<&mut RevoluteJoint, Added<RevoluteMotor>>) {
         joint.damping_linear = 0.0;
         joint.damping_angular = 0.0;
     }
-}
-
-fn get_relative_rotation(
-    entity1: Entity,
-    entity2: Entity,
-    rotation_query: &Query<&Rotation, With<RigidBody>>,
-) -> Option<Vector3> {
-    let anchor_rotation = rotation_query.get(entity1).ok()?;
-    let body_rotation = rotation_query.get(entity2).ok()?;
-
-    let relative_rotation = body_rotation.0 * anchor_rotation.0.inverse();
-    Some(relative_rotation.to_scaled_axis())
 }
 
 fn enforce_velocity_constraints(
@@ -188,8 +185,8 @@ fn apply_velocity_based_torque(
     >,
     body_query: Query<&RigidBody>,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
-    mut integral_accum: Local<Vector3>,
-    mut prev_velocity_error: Local<Option<Vector3>>,
+    mut integral_accum: Local<Scalar>,
+    mut prev_velocity_error: Local<Option<Scalar>>,
     time: Res<Time>,
 ) {
     for (
@@ -210,7 +207,7 @@ fn apply_velocity_based_torque(
             *integral_accum += velocity_error * dt;
             if let Some(max_torque_value) = max_torque.0 {
                 let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
-                *integral_accum = integral_accum.clamp_length_max(max_integral);
+                *integral_accum = integral_accum.clamp(-max_integral, max_integral);
             }
 
             let proportional = proportional_gain.0 * velocity_error;
@@ -219,18 +216,20 @@ fn apply_velocity_based_torque(
             let derivative = if let Some(prev_error) = *prev_velocity_error {
                 derivative_gain.0 * (velocity_error - prev_error) / dt
             } else {
-                Vector3::ZERO
+                0.0
             };
 
             *prev_velocity_error = Some(velocity_error);
 
-            let mut torque = proportional + integral - derivative;
+            let mut torque_magnitude = proportional + integral - derivative;
 
             if let Some(max_torque_value) = max_torque.0 {
-                if torque.length() > max_torque_value {
-                    torque = torque.normalize() * max_torque_value;
+                if torque_magnitude > max_torque_value {
+                    torque_magnitude = max_torque_value;
                 }
             }
+
+            let torque = joint.aligned_axis * torque_magnitude;
 
             debug!("Torque: {:.4}", torque);
 
@@ -260,8 +259,8 @@ fn apply_rotation_based_torque(
     >,
     mut torque_query: Query<&mut ExternalTorque, With<RigidBody>>,
     body_query: Query<&RigidBody>,
-    mut integral_accum: Local<Vector3>,
-    mut prev_error: Local<Option<Vector3>>,
+    mut integral_accum: Local<Scalar>,
+    mut prev_error: Local<Option<Scalar>>,
     time: Res<Time>,
 ) {
     for (
@@ -281,13 +280,13 @@ fn apply_rotation_based_torque(
         *integral_accum += position_error * dt;
         if let Some(max_torque_value) = max_torque.0 {
             let max_integral = max_torque_value / (integral_gain.0 + Scalar::EPSILON);
-            *integral_accum = integral_accum.clamp_length_max(max_integral);
+            *integral_accum = integral_accum.clamp(-max_integral, max_integral);
         }
 
         let derivative = if let Some(prev_err) = *prev_error {
             (prev_err - position_error) / dt
         } else {
-            Vector3::ZERO
+            0.0
         };
 
         *prev_error = Some(position_error);
@@ -296,13 +295,15 @@ fn apply_rotation_based_torque(
         let integral = integral_gain.0 * *integral_accum;
         let derivative = derivative_gain.0 * derivative;
 
-        let mut torque = proportional + integral - derivative;
+        let mut torque_magnitude = proportional + integral - derivative;
 
         if let Some(max_torque_value) = max_torque.0 {
-            if torque.length() > max_torque_value {
-                torque = torque.normalize() * max_torque_value;
+            if torque_magnitude > max_torque_value {
+                torque_magnitude = max_torque_value;
             }
         }
+
+        let torque = joint.aligned_axis * torque_magnitude;
 
         debug!("Torque: {:.4}", torque);
 
@@ -337,9 +338,9 @@ fn update_motor_rotation_state(
             if let Some(relative_rotation) =
                 get_relative_rotation(entity1, entity2, &rotation_query)
             {
-                let rotation_error = rotation.0 - relative_rotation;
+                let rotation_error = rotation.0 - relative_rotation.dot(joint.aligned_axis);
                 let rotation_error = (rotation_error + PI) % (2.0 * PI) - PI;
-                if rotation_error.length() < PI {
+                if rotation_error.abs() < PI {
                     // Avoid singularity
                     rotation.0 -= rotation_error;
                 }
@@ -358,13 +359,13 @@ fn update_motor_angular_velocity_state(
             if let Some(relative_velocity) =
                 get_relative_angular_velocity(entity1, entity2, &velocity_query)
             {
-                angular_velocity.0 = relative_velocity;
+                angular_velocity.0 = relative_velocity.dot(joint.aligned_axis);
             }
         }
     }
 }
 
-fn get_entity_pair(
+pub fn get_entity_pair(
     joint: &RevoluteJoint,
     body_query: &Query<&RigidBody>,
 ) -> Option<(Entity, Entity)> {
@@ -376,19 +377,25 @@ fn get_entity_pair(
     }
 }
 
-fn get_relative_angular_velocity(
+pub fn get_relative_angular_velocity(
     entity1: Entity,
     entity2: Entity,
     velocity_query: &Query<&AngularVelocity, With<RigidBody>>,
 ) -> Option<Vector3> {
-    let anchor_velocity = match velocity_query.get(entity1) {
-        Ok(entity1_velocity) => entity1_velocity.0,
-        Err(_) => return None,
-    };
+    let entity1_velocity = velocity_query.get(entity1).ok()?;
+    let entity2_velocity = velocity_query.get(entity2).ok()?;
 
-    if let Ok(entity2_velocity) = velocity_query.get(entity2) {
-        Some(entity2_velocity.0 - anchor_velocity)
-    } else {
-        None
-    }
+    Some(entity2_velocity.0 - entity1_velocity.0)
+}
+
+pub fn get_relative_rotation(
+    entity1: Entity,
+    entity2: Entity,
+    rotation_query: &Query<&Rotation, With<RigidBody>>,
+) -> Option<Vector3> {
+    let entity1_rotation = rotation_query.get(entity1).ok()?;
+    let entity2_rotation = rotation_query.get(entity2).ok()?;
+
+    let relative_rotation = entity2_rotation.0 * entity1_rotation.0.inverse();
+    Some(relative_rotation.to_scaled_axis())
 }
