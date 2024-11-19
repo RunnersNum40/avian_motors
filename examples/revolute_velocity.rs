@@ -59,10 +59,10 @@ fn setup(
 
     commands.spawn(directional_light);
 
-    let camera = (Camera3dBundle {
+    let camera = Camera3dBundle {
         transform: Transform::from_xyz(0.0, 0.2, 0.3).looking_at(Vec3::ZERO, Vec3::Y),
         ..Default::default()
-    },);
+    };
 
     commands.spawn(camera);
 
@@ -77,7 +77,7 @@ fn setup(
     let entity1 = {
         commands
             .spawn((
-                RigidBody::Kinematic,
+                RigidBody::Dynamic,
                 PbrBundle {
                     mesh: meshes.add(Mesh::from(Cuboid::new(0.1, 0.05, 0.1))),
                     material: materials.add(Color::srgb(0.6, 0.5, 0.5)),

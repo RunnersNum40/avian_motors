@@ -63,7 +63,7 @@ impl Default for RevoluteMotorBundle {
     fn default() -> Self {
         Self {
             motor: RevoluteMotor,
-            stiffness: MotorProportionalGain(0.0000001),
+            stiffness: MotorProportionalGain(1e-7),
             damping: MotorDerivativeGain(0.0),
             integral_gain: MotorIntegralGain(0.0),
             max_torque: MotorMaxTorque(None),
@@ -75,21 +75,21 @@ impl Default for RevoluteMotorBundle {
 }
 
 pub struct MotorPlugin {
-    pub remove_dampening: bool,
+    pub remove_dampning: bool,
     pub substep_count: Option<u32>,
 }
 
 impl Plugin for MotorPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, multi_target_warning)
-            .add_systems(FixedUpdate, non_normalized_axis_warning)
+            .add_systems(FixedUpdate, warn_if_axis_not_normalized)
             .add_systems(FixedUpdate, enforce_velocity_constraints)
             .add_systems(FixedUpdate, update_motor_rotation_state)
             .add_systems(FixedUpdate, update_motor_angular_velocity_state)
             .add_systems(FixedUpdate, apply_velocity_based_torque)
             .add_systems(FixedUpdate, apply_rotation_based_torque);
 
-        if self.remove_dampening {
+        if self.remove_dampning {
             app.add_systems(FixedUpdate, disable_damping);
         }
 
@@ -102,13 +102,13 @@ impl Plugin for MotorPlugin {
 impl Default for MotorPlugin {
     fn default() -> Self {
         Self {
-            remove_dampening: true,
+            remove_dampning: true,
             substep_count: Some(1000),
         }
     }
 }
 
-fn non_normalized_axis_warning(query: Query<&RevoluteJoint, Added<RevoluteMotor>>) {
+fn warn_if_axis_not_normalized(query: Query<&RevoluteJoint, Added<RevoluteMotor>>) {
     for joint in query.iter() {
         if joint.aligned_axis.length() != 1.0 {
             error!("Aligned axis must be normalized for motor to work")
