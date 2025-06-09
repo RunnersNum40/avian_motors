@@ -1,8 +1,8 @@
 # Avian Motors
 
-The `avian_motors` crate provides a modular motor control system for use with the `avian3d` physics engine and the `bevy` game engine. Proper motor joints are a planned feature of Avian, so this will hopefully be obsolete soon.
+This crate provides a modular motor control system for use with the `avian3d` physics engine and the `bevy` game engine. Proper motor joints are a planned feature of Avian, so this will hopefully be obsolete soon.
 
-Currently, only revolute joints are supported, but prismatic, spherical, planar, and distance joints are planned.
+Currently, only revolute joints are supported, but prismatic, spherical, planar, and distance joints are planned on an intermediate timeline.
 
 ## Features
 
@@ -48,3 +48,9 @@ Some basic examples are provided in the `examples/` directory.
 
 `cargo run --example revolute_velocity` to control a revolute joint with velocity control.
 ![](media/velocity.gif)
+
+## Feedback and Contributions
+
+Feel free to open issues or pull requests for any bugs, feature requests, or improvements
+Contributions are welcome!
+Also feel to reach out for advice on using this crate.
